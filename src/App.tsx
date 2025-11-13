@@ -6,6 +6,7 @@ export default function App() {
   const [isViewing, setIsViewing] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [roomId, setRoomId] = useState<string>('');
+  const [status, setStatus] = useState<string>('idle');
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
@@ -19,6 +20,21 @@ export default function App() {
 
     socketInstance.on('connect', () => {
       console.log('Connected to server');
+      setStatus('connected-to-signaling');
+    });
+
+    socketInstance.on('connect_error', (err) => {
+      console.error('Socket connect error', err);
+    });
+
+    socketInstance.on('disconnect', (reason) => {
+      console.log('Socket disconnected', reason);
+      setStatus('disconnected');
+    });
+
+    socketInstance.on('reconnect', (attempt) => {
+      console.log('Socket reconnected', attempt);
+      setStatus('connected-to-signaling');
     });
 
     socketInstance.on('room-created', (data: { roomId: string }) => {
@@ -28,6 +44,7 @@ export default function App() {
 
     socketInstance.on('viewer-joined', async () => {
       console.log('Viewer joined');
+      setStatus('negotiating');
       if (localStreamRef.current && peerConnectionRef.current) {
         localStreamRef.current.getTracks().forEach(track => {
           if (localStreamRef.current && peerConnectionRef.current) {
@@ -55,6 +72,7 @@ export default function App() {
       console.log('Received answer');
       if (peerConnectionRef.current) {
         await peerConnectionRef.current.setRemoteDescription(data.answer);
+        setStatus('media-connected');
       }
     });
 
@@ -88,9 +106,26 @@ export default function App() {
         console.log('Received remote stream');
         if (remoteVideoRef.current && event.streams[0]) {
           remoteVideoRef.current.srcObject = event.streams[0];
+          // Attempt to play for mobile devices
+          remoteVideoRef.current.play().catch(() => {});
+          setStatus('media-connected');
         }
       };
     }
+
+    peerConnection.onconnectionstatechange = () => {
+      const state = peerConnection.connectionState;
+      if (state === 'connected') setStatus('media-connected');
+      if (state === 'disconnected' || state === 'failed') setStatus('disconnected');
+      if (state === 'connecting') setStatus('negotiating');
+    };
+
+    peerConnection.oniceconnectionstatechange = () => {
+      const state = peerConnection.iceConnectionState;
+      if (state === 'connected') setStatus('media-connected');
+      if (state === 'checking') setStatus('negotiating');
+      if (state === 'failed' || state === 'disconnected') setStatus('disconnected');
+    };
 
     peerConnectionRef.current = peerConnection;
     return peerConnection;
@@ -123,6 +158,9 @@ export default function App() {
       localStreamRef.current = stream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
+        localVideoRef.current.setAttribute('playsinline', 'true');
+        // Some browsers require explicit play
+        localVideoRef.current.play().catch(() => {});
       }
 
       const peerConnection = createPeerConnection(true);
@@ -136,9 +174,11 @@ export default function App() {
       };
 
       setIsSharing(true);
+      setStatus('sharing');
       socket?.emit('start-share');
     } catch (error) {
       console.error('Error starting screen share:', error);
+      setStatus('idle');
     }
   };
 
@@ -155,6 +195,7 @@ export default function App() {
       localVideoRef.current.srcObject = null;
     }
     setIsSharing(false);
+    setStatus('idle');
     socket?.emit('stop-share');
   };
 
@@ -162,9 +203,11 @@ export default function App() {
     try {
       const peerConnection = createPeerConnection(false);
       setIsViewing(true);
+      setStatus('negotiating');
       socket?.emit('join-view');
     } catch (error) {
       console.error('Error starting viewing:', error);
+      setStatus('idle');
     }
   };
 
@@ -177,6 +220,7 @@ export default function App() {
       remoteVideoRef.current.srcObject = null;
     }
     setIsViewing(false);
+    setStatus('idle');
   };
 
   return (
@@ -186,7 +230,7 @@ export default function App() {
           Screen Share
         </h1>
         
-        <div className="flex justify-center gap-4 mb-8">
+        <div className="flex justify-center gap-4 mb-4">
           {!isSharing ? (
             <button
               onClick={startSharing}
@@ -220,6 +264,17 @@ export default function App() {
           )}
         </div>
 
+        <div className="text-center mb-6">
+          <span className="inline-block px-3 py-1 rounded-full text-sm bg-gray-200 text-gray-700">
+            {status === 'idle' && 'Idle'}
+            {status === 'connected-to-signaling' && 'Connected to signaling'}
+            {status === 'sharing' && 'Sharing started'}
+            {status === 'negotiating' && 'Negotiating connection'}
+            {status === 'media-connected' && 'Streaming'}
+            {status === 'disconnected' && 'Disconnected'}
+          </span>
+        </div>
+
         {roomId && (
           <div className="text-center mb-4">
             <p className="text-sm text-gray-600">Room ID: {roomId}</p>
@@ -234,6 +289,7 @@ export default function App() {
                 ref={localVideoRef}
                 autoPlay
                 muted
+                playsInline
                 className="w-full h-64 bg-black rounded-lg"
               />
             </div>
@@ -245,6 +301,7 @@ export default function App() {
               <video
                 ref={remoteVideoRef}
                 autoPlay
+                playsInline
                 className="w-full h-64 bg-black rounded-lg"
               />
             </div>
