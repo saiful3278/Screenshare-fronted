@@ -9,12 +9,20 @@ export default function App() {
   const [status, setStatus] = useState<string>('idle');
   const [availableCount, setAvailableCount] = useState<number>(0);
   const [availableRooms, setAvailableRooms] = useState<string[]>([]);
+  const [canShare, setCanShare] = useState<boolean>(true);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
+    const ua = navigator.userAgent || '';
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
+    const secure = (window as any).isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    const topLevel = window.top === window.self;
+    const api = !!(navigator.mediaDevices && (navigator.mediaDevices as any).getDisplayMedia);
+    setCanShare(secure && topLevel && api && !isMobile);
+
     const params = new URLSearchParams(window.location.search);
     const initialRoom = params.get('room');
     if (initialRoom) setRoomId(initialRoom);
@@ -323,7 +331,8 @@ export default function App() {
           {!isSharing ? (
             <button
               onClick={startSharing}
-              className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              disabled={!canShare}
+              className={`bg-blue-500 ${canShare ? 'hover:bg-blue-600' : 'opacity-50 cursor-not-allowed'} text-white font-semibold py-3 px-6 rounded-lg transition-colors`}
             >
               Share
             </button>
