@@ -13,8 +13,14 @@ export default function App() {
   const localStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    const socketInstance = io('https://screenshare-backend.onrender.com', {
-      transports: ['websocket']
+    const socketInstance = io(import.meta.env.VITE_SERVER_URL, {
+      transports: ['websocket'],
+      timeout: 20000,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      path: '/socket.io'
     });
     setSocket(socketInstance);
 
@@ -25,6 +31,9 @@ export default function App() {
 
     socketInstance.on('connect_error', (err) => {
       console.error('Socket connect error', err);
+      if (String(err?.message || '').toLowerCase().includes('timeout')) {
+        setStatus('disconnected');
+      }
     });
 
     socketInstance.on('disconnect', (reason) => {
@@ -86,7 +95,14 @@ export default function App() {
     return () => {
       socketInstance.disconnect();
     };
-  }, [roomId]);
+  }, []);
+
+  const retrySignaling = () => {
+    if (socket) {
+      setStatus('negotiating');
+      socket.connect();
+    }
+  };
 
   const createPeerConnection = (isInitiator: boolean) => {
     const peerConnection = new RTCPeerConnection({
@@ -265,7 +281,7 @@ export default function App() {
         </div>
 
         <div className="text-center mb-6">
-          <span className="inline-block px-3 py-1 rounded-full text-sm bg-gray-200 text-gray-700">
+          <span className="inline-block px-3 py-1 rounded-full text-sm bg-gray-200 text-gray-700 mr-2">
             {status === 'idle' && 'Idle'}
             {status === 'connected-to-signaling' && 'Connected to signaling'}
             {status === 'sharing' && 'Sharing started'}
@@ -273,6 +289,9 @@ export default function App() {
             {status === 'media-connected' && 'Streaming'}
             {status === 'disconnected' && 'Disconnected'}
           </span>
+          <button onClick={retrySignaling} className="inline-block bg-gray-800 text-white text-sm px-3 py-1 rounded">
+            Retry
+          </button>
         </div>
 
         {roomId && (
