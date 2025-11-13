@@ -98,6 +98,23 @@ export default function App() {
 
   const startSharing = async () => {
     try {
+      const isTopLevel = window.top === window.self;
+      const isSecure = (window as any).isSecureContext || location.hostname === 'localhost';
+      const hasAPI = !!(navigator.mediaDevices && (navigator.mediaDevices as any).getDisplayMedia);
+
+      if (!isSecure) {
+        console.error('Use HTTPS or localhost');
+        return;
+      }
+      if (!isTopLevel) {
+        console.error('Open in a browser tab');
+        return;
+      }
+      if (!hasAPI) {
+        console.error('Screen capture API unavailable');
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
         audio: false
