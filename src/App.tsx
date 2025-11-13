@@ -9,20 +9,12 @@ export default function App() {
   const [status, setStatus] = useState<string>('idle');
   const [availableCount, setAvailableCount] = useState<number>(0);
   const [availableRooms, setAvailableRooms] = useState<string[]>([]);
-  const [canShare, setCanShare] = useState<boolean>(true);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    const ua = navigator.userAgent || '';
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
-    const secure = (window as any).isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    const topLevel = window.top === window.self;
-    const api = !!(navigator.mediaDevices && (navigator.mediaDevices as any).getDisplayMedia);
-    setCanShare(secure && topLevel && api && !isMobile);
-
     const params = new URLSearchParams(window.location.search);
     const initialRoom = params.get('room');
     if (initialRoom) setRoomId(initialRoom);
@@ -221,6 +213,7 @@ export default function App() {
         || location.hostname === 'localhost'
         || location.hostname === '127.0.0.1';
       const hasAPI = !!(navigator.mediaDevices && (navigator.mediaDevices as any).getDisplayMedia);
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
       if (!isSecure) {
         console.error('Use HTTPS or localhost');
@@ -233,6 +226,9 @@ export default function App() {
       if (!hasAPI) {
         console.error('Screen capture API unavailable');
         return;
+      }
+      if (isMobile) {
+        console.log('Mobile environment detected');
       }
 
       const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -255,8 +251,14 @@ export default function App() {
       setStatus('sharing');
       socket?.emit('start-share');
       socket?.emit('get-available');
-    } catch (error) {
-      console.error('Error starting screen share:', error);
+    } catch (error: any) {
+      if (error?.name === 'NotSupportedError') {
+        console.error('Mobile screen share not supported on this browser');
+      } else if (error?.name === 'NotAllowedError') {
+        console.error('Permission denied for screen capture');
+      } else {
+        console.error('Error starting screen share:', error);
+      }
       setStatus('idle');
     }
   };
@@ -331,8 +333,7 @@ export default function App() {
           {!isSharing ? (
             <button
               onClick={startSharing}
-              disabled={!canShare}
-              className={`bg-blue-500 ${canShare ? 'hover:bg-blue-600' : 'opacity-50 cursor-not-allowed'} text-white font-semibold py-3 px-6 rounded-lg transition-colors`}
+              className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
             >
               Share
             </button>
